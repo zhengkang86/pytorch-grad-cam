@@ -5,6 +5,7 @@ import torch
 from torch.autograd import Function
 from torchvision import models
 
+
 class FeatureExtractor():
     """ Class for extracting activations and 
     registering gradients from targetted intermediate layers """
@@ -82,16 +83,16 @@ class GradCam:
 
         self.extractor = ModelOutputs(self.model, target_layer_names)
 
-    def forward(self, input):
-        return self.model(input)
+    def forward(self, input_data):
+        return self.model(input_data)
 
-    def __call__(self, input, index=None):
+    def __call__(self, input_data, index=None):
         if self.cuda:
-            features, output = self.extractor(input.cuda())
+            features, output = self.extractor(input_data.cuda())
         else:
-            features, output = self.extractor(input)
+            features, output = self.extractor(input_data)
 
-        if index == None:
+        if index is None:
             index = np.argmax(output.cpu().data.numpy())
 
         one_hot = np.zeros((1, output.size()[-1]), dtype=np.float32)
@@ -127,21 +128,21 @@ class GradCam:
 class GuidedBackpropReLU(Function):
 
     @staticmethod
-    def forward(self, input):
-        positive_mask = (input > 0).type_as(input)
-        output = torch.addcmul(torch.zeros(input.size()).type_as(input), input, positive_mask)
-        self.save_for_backward(input, output)
+    def forward(self, input_data):
+        positive_mask = (input_data > 0).type_as(input_data)
+        output = torch.addcmul(torch.zeros(input_data.size()).type_as(input_data), input_data, positive_mask)
+        self.save_for_backward(input_data, output)
         return output
 
     @staticmethod
     def backward(self, grad_output):
-        input, output = self.saved_tensors
+        input_data, output = self.saved_tensors
         grad_input = None
 
-        positive_mask_1 = (input > 0).type_as(grad_output)
+        positive_mask_1 = (input_data > 0).type_as(grad_output)
         positive_mask_2 = (grad_output > 0).type_as(grad_output)
-        grad_input = torch.addcmul(torch.zeros(input.size()).type_as(input),
-                                   torch.addcmul(torch.zeros(input.size()).type_as(input), grad_output,
+        grad_input = torch.addcmul(torch.zeros(input_data.size()).type_as(input_data),
+                                   torch.addcmul(torch.zeros(input_data.size()).type_as(input_data), grad_output,
                                                  positive_mask_1), positive_mask_2)
 
         return grad_input
@@ -160,16 +161,16 @@ class GuidedBackpropReLUModel:
             if module.__class__.__name__ == 'ReLU':
                 self.model.features._modules[idx] = GuidedBackpropReLU.apply
 
-    def forward(self, input):
-        return self.model(input)
+    def forward(self, input_data):
+        return self.model(input_data)
 
-    def __call__(self, input, index=None):
+    def __call__(self, input_data, index=None):
         if self.cuda:
-            output = self.forward(input.cuda())
+            output = self.forward(input_data.cuda())
         else:
-            output = self.forward(input)
+            output = self.forward(input_data)
 
-        if index == None:
+        if index is None:
             index = np.argmax(output.cpu().data.numpy())
 
         one_hot = np.zeros((1, output.size()[-1]), dtype=np.float32)
@@ -184,7 +185,7 @@ class GuidedBackpropReLUModel:
         # self.model.classifier.zero_grad()
         one_hot.backward(retain_graph=True)
 
-        output = input.grad.cpu().data.numpy()
+        output = input_data.grad.cpu().data.numpy()
         output = output[0, :, :, :]
 
         return output
@@ -205,6 +206,7 @@ def get_args():
 
     return args
 
+
 def deprocess_image(img):
     """ see https://github.com/jacobgil/keras-grad-cam/blob/master/grad-cam.py#L65 """
     img = img - np.mean(img)
@@ -212,7 +214,7 @@ def deprocess_image(img):
     img = img * 0.1
     img = img + 0.5
     img = np.clip(img, 0, 1)
-    return np.uint8(img*255)
+    return np.uint8(img * 255)
 
 
 if __name__ == '__main__':
@@ -246,7 +248,7 @@ if __name__ == '__main__':
     gb = gb_model(input, index=target_index)
     gb = gb.transpose((1, 2, 0))
     cam_mask = cv2.merge([mask, mask, mask])
-    cam_gb = deprocess_image(cam_mask*gb)
+    cam_gb = deprocess_image(cam_mask * gb)
     gb = deprocess_image(gb)
 
     cv2.imwrite('gb.jpg', gb)
