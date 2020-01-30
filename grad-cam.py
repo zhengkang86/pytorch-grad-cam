@@ -230,22 +230,22 @@ if __name__ == '__main__':
     # Can work with any model, but it assumes that the model has a
     # feature method, and a classifier method,
     # as in the VGG models in torchvision.
-    grad_cam = GradCam(model=models.vgg19(pretrained=True), \
+    grad_cam = GradCam(model=models.vgg19(pretrained=True),
                        target_layer_names=["35"], use_cuda=args.use_cuda)
 
     img = cv2.imread(args.image_path, 1)
     img = np.float32(cv2.resize(img, (224, 224))) / 255
-    input = preprocess_image(img)
+    input_data = preprocess_image(img)
 
     # If None, returns the map for the highest scoring category.
     # Otherwise, targets the requested index.
     target_index = None
-    mask = grad_cam(input, target_index)
+    mask = grad_cam(input_data, target_index)
 
     show_cam_on_image(img, mask)
 
     gb_model = GuidedBackpropReLUModel(model=models.vgg19(pretrained=True), use_cuda=args.use_cuda)
-    gb = gb_model(input, index=target_index)
+    gb = gb_model(input_data, index=target_index)
     gb = gb.transpose((1, 2, 0))
     cam_mask = cv2.merge([mask, mask, mask])
     cam_gb = deprocess_image(cam_mask * gb)
