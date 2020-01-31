@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.autograd import Function
 from torchvision import models
+import matplotlib.pyplot as plt
 
 
 def get_args():
@@ -36,6 +37,20 @@ def preprocess_image(img):
     preprocessed_img.unsqueeze_(0)
     input = preprocessed_img.requires_grad_(True)
     return input
+
+def postprocess_image(img):
+    means = [0.485, 0.456, 0.406]
+    stds = [0.229, 0.224, 0.225]
+
+    output = img.copy()
+    for i in range(3):
+        output[:, :, i] *= stds[i]
+        output[:, :, i] += means[i]
+
+    output = output[:, :, ::-1]
+
+    return output
+
 
 
 def deprocess_image(img):
@@ -136,22 +151,23 @@ class GradCam:
         grads_val = self.extractor.get_gradients()[-1].cpu().data.numpy()
 
         target = features[-1]
+        cam_list = []
+        for idx in range(target.shape[0]):
+            target_i = target.cpu().data.numpy()[idx, :]
 
-        # NOTE: only using the first image in the mini-batch
-        target = target.cpu().data.numpy()[0, :]
+            weights = np.mean(grads_val, axis=(2, 3))[0, :]
+            cam = np.zeros(target_i.shape[1:], dtype=np.float32)
 
-        weights = np.mean(grads_val, axis=(2, 3))[0, :]
-        cam = np.zeros(target.shape[1:], dtype=np.float32)
+            for i, w in enumerate(weights):
+                cam += w * target_i[i, :, :]
 
-        for i, w in enumerate(weights):
-            cam += w * target[i, :, :]
+            cam = np.maximum(cam, 0)
+            cam = cv2.resize(cam, (224, 224))
+            cam = cam - np.min(cam)
+            cam = cam / np.max(cam)
+            cam_list.append(cam)
 
-        cam = np.maximum(cam, 0)
-        cam = cv2.resize(cam, (224, 224))
-        cam = cam - np.min(cam)
-        cam = cam / np.max(cam)
-
-        return cam
+        return cam_list
 
 
 class GuidedBackpropReLU(Function):
@@ -237,13 +253,22 @@ if __name__ == '__main__':
                        target_layer_names=["35"], use_cuda=args.use_cuda)
 
     img = cv2.imread(args.image_path, 1)
+    img = img[:, :, ::-1]
     img = np.float32(cv2.resize(img, (224, 224))) / 255
     input_data = preprocess_image(img)
 
     # If None, returns the map for the highest scoring category.
     # Otherwise, targets the requested index.
     target_index = None
-    mask = grad_cam(input_data, target_index)
+    mask_list = grad_cam(input_data, target_index)
+    mask = mask_list[0]
+
+    fig, ax = plt.subplots(1, 2)
+    tmp = input_data.detach().numpy()[0, ...].transpose((1, 2, 0))
+    ax[0].imshow(np.uint8(postprocess_image(tmp) * 255.0))
+    # ax[0].imshow(img)
+    ax[1].imshow(mask, cmap=plt.cm.jet)
+    plt.show()
 
     show_cam_on_image(img, mask)
 
