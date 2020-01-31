@@ -136,6 +136,8 @@ class GradCam:
         grads_val = self.extractor.get_gradients()[-1].cpu().data.numpy()
 
         target = features[-1]
+
+        # NOTE: only using the first image in the mini-batch
         target = target.cpu().data.numpy()[0, :]
 
         weights = np.mean(grads_val, axis=(2, 3))[0, :]
